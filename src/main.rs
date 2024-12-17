@@ -4,19 +4,16 @@ use std::io::Write;
 use libs::client::run_client;
 use libs::server::run_server;
 use std::error::Error;
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::StructOpt;
 use log::{info, error};
-
+use crate::libs::client::ClientOptions;
+use crate::libs::server::ServerOptions;
 
 #[derive(StructOpt, Debug)]
 pub struct GlobalOptions {
-    #[structopt(short="p", long, default_value = "4433")]
-    pub socket_port: u16,
-
-    #[structopt(short="b", long, default_value = "0.0.0.0")]
-    pub socket_binding: String,
-
     #[structopt(short="n", long)]
     pub name: String,
 }
@@ -28,22 +25,28 @@ enum Command {
     Server {
         #[structopt(flatten)]
         opts: GlobalOptions,
+        #[structopt(short="l", long, default_value = "[::]:4433")]
+        listen: SocketAddr,
+        #[structopt(short="k", long, requires="cert")]
+        key: Option<PathBuf>,
+        #[structopt(short="c", long, requires="key")]
+        cert: Option<PathBuf>
     },
     /// Jalankan client
     Client {
         #[structopt(flatten)]
         opts: GlobalOptions,
         /// Host dari server yang akan dihubungkan
-        #[structopt(short="u", long, default_value = "127.0.0.1:4433")]
-        server_url: String,
+        #[structopt(short="u", long="url", default_value = "127.0.0.1:4433")]
+        url: String,
+        #[structopt(long)]
+        ca: Option<PathBuf>,
+        #[structopt(long, default_value = "[::]:0")]
+        bind: SocketAddr
     },
 }
 
-impl GlobalOptions {
-    pub fn get_socket_addr(&self) -> String {
-        format!("{}:{}", self.socket_binding, self.socket_port)
-    }
-}
+impl GlobalOptions {}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
@@ -64,27 +67,37 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         })
         .filter_level(log::LevelFilter::Info)
         .init();
-
-
     match Command::from_args() {
-        Command::Server { opts } => {
+        Command::Server { listen, key, cert, opts } => {
             info!(
                 "Memulai server '{}' pada alamat {}:{}",
-                opts.name, opts.socket_binding, opts.socket_port
+                opts.name, listen.ip(), listen.port()
             );
-            let opts = Arc::new(opts);
-            if let Err(e) = run_server(opts).await {
+            let server_options = ServerOptions {
+                listen,
+                key,
+                cert,
+                name: opts.name.clone()
+            };
+            let server_options = Arc::new(server_options);
+            if let Err(e) = run_server(server_options).await {
                 error!("Server gagal dijalankan: {}", e);
             } else {
                 info!("Server berhenti dengan sukses");
             }
         }
-        Command::Client { opts, server_url } => {
+        Command::Client { opts, url, bind, ca } => {
             info!(
                 "Memulai client '{}' untuk terhubung ke server di {}",
-                opts.name, server_url
+                opts.name, url
             );
-            if let Err(e) = run_client(server_url, &opts).await {
+            let client_options = ClientOptions {
+                name: opts.name.clone(),
+                bind,
+                url,
+                ca,
+            };
+            if let Err(e) = run_client(&client_options).await {
                 error!("Client gagal dijalankan: {}", e);
             } else {
                 info!("Client selesai dijalankan dengan sukses");

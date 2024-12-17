@@ -1,11 +1,12 @@
-use crate::GlobalOptions;
 use proto::crypto::rustls::QuicClientConfig;
 use proto::ClientConfig;
 use quinn::Endpoint;
 use rand::Rng;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use std::error::Error;
+use std::fs;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use log::{error, info};
@@ -18,28 +19,44 @@ struct Data {
     temperature: f32,
 }
 
-pub async fn run_client(server_url: String, opts: &GlobalOptions) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    let server_addr = opts.get_socket_addr().parse::<SocketAddr>()?;
+pub struct ClientOptions {
+    pub name: String,
+    pub bind: SocketAddr,
+    pub url: String,
+    pub ca: Option<PathBuf>
+}
 
-    info!("Connecting to server at {}", server_addr);
+pub async fn run_client(opts: &ClientOptions) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    info!("Connecting to server at socket {}", opts.bind);
 
     let mut rng = rand::thread_rng();
     let interval = Duration::from_secs(5);
 
     // Configure TLS
     rustls::crypto::ring::default_provider().install_default().expect("Failed to install rustls crypto provider");
-    let rustls_config = rustls::ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(SkipServerVerification::new())
-        .with_no_client_auth();
+    let rustls_config =match &opts.ca {
+        None => {
+            rustls::ClientConfig::builder()
+                .dangerous()
+                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .with_no_client_auth()
+        }
+        Some(ca_path) => {
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.add(CertificateDer::from(fs::read(ca_path)?))?;
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth()
+        }
+    };
 
     let client_config = ClientConfig::new(Arc::new(QuicClientConfig::try_from(rustls_config)?));
 
-    let endpoint = Endpoint::client(server_addr)?;
+    let endpoint = Endpoint::client(opts.bind)?;
 
     loop {
         info!("[{}] Mencoba koneksi...", opts.name);
-        match endpoint.connect_with(client_config.clone(), server_url.parse()?, &opts.name)?.await {
+        match endpoint.connect_with(client_config.clone(), opts.url.parse()?, &opts.name)?.await {
             Ok(connection) => {
                 info!("[{}] Server berhasil terkoneksi", opts.name);
 
