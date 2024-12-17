@@ -674,7 +674,6 @@ dependencies = [
  "rand",
  "rcgen",
  "rustls",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "structopt",
