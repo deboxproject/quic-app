@@ -5,13 +5,14 @@ use rand::Rng;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use std::error::Error;
 use std::fs;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use log::{error, info};
 use tokio::time;
 use serde::Serialize;
+use url::Url;
 
 #[derive(Serialize)]
 struct Data {
@@ -22,13 +23,16 @@ struct Data {
 pub struct ClientOptions {
     pub name: String,
     pub bind: SocketAddr,
-    pub url: String,
+    pub url: Url,
     pub ca: Option<PathBuf>
 }
 
 pub async fn run_client(opts: &ClientOptions) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    info!("Connecting to server at socket {}", opts.bind);
-
+    let url = &opts.url;
+    let url_host = strip_ipv6_bracket(url.host_str().unwrap_or("127.0.0.1"));
+    let remote = (url_host, url.port().unwrap_or(4433))
+        .to_socket_addrs()?
+        .next().unwrap();
     let mut rng = rand::thread_rng();
     let interval = Duration::from_secs(5);
 
@@ -52,11 +56,13 @@ pub async fn run_client(opts: &ClientOptions) -> Result<(), Box<dyn Error + Send
 
     let client_config = ClientConfig::new(Arc::new(QuicClientConfig::try_from(rustls_config)?));
 
-    let endpoint = Endpoint::client(opts.bind)?;
+    info!("[{}] Mencoba koneksi dengan socket {}", opts.name, opts.bind);
+    let mut endpoint = Endpoint::client(opts.bind)?;
+    endpoint.set_default_client_config(client_config);
 
     loop {
         info!("[{}] Mencoba koneksi...", opts.name);
-        match endpoint.connect_with(client_config.clone(), opts.url.parse()?, &opts.name)?.await {
+        match endpoint.connect( remote, url_host)?.await {
             Ok(connection) => {
                 info!("[{}] Server berhasil terkoneksi", opts.name);
 
@@ -150,5 +156,13 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+fn strip_ipv6_bracket(url: &str) -> &str {
+    if url.starts_with("[") && url.ends_with("]") {
+        &url[1..url.len() - 1]
+    } else {
+        url
     }
 }

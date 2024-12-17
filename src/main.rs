@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::StructOpt;
 use log::{info, error};
+use url::Url;
 use crate::libs::client::ClientOptions;
 use crate::libs::server::ServerOptions;
 
@@ -37,8 +38,7 @@ enum Command {
         #[structopt(flatten)]
         opts: GlobalOptions,
         /// Host dari server yang akan dihubungkan
-        #[structopt(short="u", long="url", default_value = "127.0.0.1:4433")]
-        url: String,
+        url: Url,
         #[structopt(long)]
         ca: Option<PathBuf>,
         #[structopt(long, default_value = "[::]:0")]
