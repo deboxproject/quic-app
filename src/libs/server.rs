@@ -1,5 +1,5 @@
 use quinn::{Endpoint, RecvStream, ServerConfig};
-use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde::Deserialize;
 use std::error::Error;
 use std::net::SocketAddr;
@@ -73,7 +73,7 @@ async fn handle_stream(mut stream: RecvStream, opts: &ServerOptions) -> Result<(
 pub fn configure_server(opts: &ServerOptions
 ) -> Result<ServerConfig, Box<dyn Error + Send + Sync + 'static>> {
     let (certs, priv_key) = if let (Some(cert_path), Some(key_path)) = (&opts.cert, &opts.key) {
-        let key = PrivatePkcs8KeyDer::from_pem_file(key_path)?;
+        let key = PrivateKeyDer::from_pem_file(key_path)?;
 
         let cert_chain = CertificateDer::from_pem_file(cert_path)?;
         (vec![cert_chain], key)
